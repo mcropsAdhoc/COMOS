@@ -1,0 +1,1 @@
+window.COMMOS_CONFIG={apiUrl:"",environment:"demo"};
