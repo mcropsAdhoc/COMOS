@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="theme-color" content="#0b0f0d"/>
+<title>COMMOS · Commodity Agentic Services Harness</title>
+<meta name="description" content="DCF COMMOS — commodity agentic services harness built on AgrOS"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="brand">
+      <div class="mark">C</div>
+      <div><strong>COMMOS</strong><span>BY DCF · POWERED BY AgrOS</span></div>
+    </div>
+    <nav>
+      <a class="active">Command center</a>
+      <a>Commodity lots</a>
+      <a>Market agent</a>
+      <a>Trade agent</a>
+      <a>Finance agent</a>
+      <a>Risk & compliance</a>
+      <a>Settlement agent</a>
+      <a>Skills registry</a>
+      <a>Run traces</a>
+    </nav>
+    <div class="base">
+      <span class="dot"></span><b id="connection">DEMO HARNESS</b>
+      <small>AgrOS substrate · COMMOS v0.1</small>
+    </div>
+  </aside>
+
+  <main>
+    <header>
+      <div>
+        <div class="kicker">COMMODITY AGENTIC SERVICES HARNESS</div>
+        <h1>Turn commodity intent<br/>into <em>governed execution.</em></h1>
+        <p>COMMOS composes AgrOS identity, graph, skills, policy, AgPay and ledger primitives into specialized commodity agents for market intelligence, trade, finance, risk, compliance and settlement.</p>
+      </div>
+      <button id="run-demo">Run commodity flow</button>
+    </header>
+
+    <section id="metrics" class="metrics"></section>
+
+    <section class="panel">
+      <div class="section-title"><div><span>HARNESS</span><h2>Commodity agents</h2></div><p>Specialized agents share one trusted commodity state and may only act through registered AgrOS skills.</p></div>
+      <div id="agents" class="agents"></div>
+    </section>
+
+    <section class="split">
+      <div class="panel">
+        <div class="section-title tight"><div><span>DIGITAL ASSET</span><h2>Commodity lot</h2></div></div>
+        <div id="lot" class="lot-card"></div>
+      </div>
+      <div class="panel">
+        <div class="section-title tight"><div><span>ORCHESTRATION</span><h2>Intent → skill plan</h2></div></div>
+        <div class="intent-row">
+          <select id="intent"><option value="sell">Sell lot</option><option value="finance">Finance lot</option><option value="hedge">Hedge exposure</option><option value="assess">Assess lot</option><option value="settle">Settle trade</option></select>
+          <button id="plan-button">Generate plan</button>
+        </div>
+        <div id="plan" class="plan"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title"><div><span>PLATFORM BUILD</span><h2>12 operational capability layers</h2></div><p>COMMOS composes commodity services in ordered layers on top of AgrOS.</p></div>
+      <div id="capabilities" class="skills"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title"><div><span>GOVERNED CAPABILITIES</span><h2>Skills registry</h2></div><p>Critical ownership and value-moving skills are gated by explicit approval.</p></div>
+      <div id="skills" class="skills"></div>
+    </section>
+
+    <section class="split">
+      <div class="panel">
+        <div class="section-title tight"><div><span>RUN TRACE</span><h2>Current execution</h2></div><b id="run-state" class="badge guarded">APPROVAL REQUIRED</b></div>
+        <div id="trace" class="trace"></div>
+        <button id="approve" class="approve">Approve value-moving steps</button>
+      </div>
+      <div class="panel">
+        <div class="section-title tight"><div><span>AGRos SUBSTRATE</span><h2>Trust boundary</h2></div></div>
+        <div id="substrate" class="substrate"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title"><div><span>EVENTS</span><h2>Commodity event stream</h2></div><b class="stream">STREAMING</b></div>
+      <div id="events" class="events"></div>
+    </section>
+
+    <footer><span>COMMOS · Commodity Agentic Services Harness</span><span>AgrOS provides identity · graph · policy · settlement · audit</span></footer>
+  </main>
+</div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
