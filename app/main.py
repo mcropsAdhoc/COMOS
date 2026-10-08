@@ -1,13 +1,32 @@
 from datetime import datetime, timezone
+import os, hmac
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from app.commos import router as commos_router
 from app.commos_platform import router as commos_platform_router
 
 app = FastAPI(title="DCF AgrOS Agent-Native Infrastructure", version="0.3.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+cors_origins = [x.strip() for x in os.getenv("COMMOS_CORS_ORIGINS", "*").split(",") if x.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.middleware("http")
+async def commos_api_key_guard(request, call_next):
+    require_key = os.getenv("COMMOS_REQUIRE_API_KEY", "false").lower() == "true"
+    protected = request.url.path.startswith("/v1/commos") and request.method not in ("GET", "HEAD", "OPTIONS")
+    if require_key and protected:
+        expected = os.getenv("COMMOS_API_KEY", "")
+        supplied = request.headers.get("X-COMMOS-API-KEY", "")
+        if not expected or not hmac.compare_digest(supplied, expected):
+            return JSONResponse({"detail": "valid X-COMMOS-API-KEY required"}, status_code=401)
+    return await call_next(request)
 app.include_router(commos_router)
 app.include_router(commos_platform_router)
 
