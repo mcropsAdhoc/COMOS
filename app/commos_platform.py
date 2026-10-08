@@ -148,6 +148,16 @@ def deterministic_plan(req:PlanRequest):
 @router.on_event("startup")
 def startup():
     init_db()
+    try:
+        health = infrastructure_health()
+        summary = health.get("summary", {})
+        statuses = [
+            {"name": s.get("name"), "status": s.get("status"), "reachable": s.get("reachable")}
+            for s in health.get("services", [])
+        ]
+        print("COMMOS_INFRA_STATUS", {"summary": summary, "services": statuses})
+    except Exception as exc:
+        print("COMMOS_INFRA_STATUS", {"status": "probe_failed", "error_type": type(exc).__name__})
 
 @router.post("/planner/plan")
 def planner_plan(body:PlanRequest):
