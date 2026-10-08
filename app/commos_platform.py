@@ -499,3 +499,16 @@ def fred_coffee_sync(variety:str="arabica"):
         "metadata":{"series_id":series,"observation_date":last.get("DATE"),"frequency":"monthly"}
     })
     return {"variety":variety.lower(),"series_id":series,"observation":observation,"source_url":url}
+
+
+@router.post("/infrastructure/probe")
+def infrastructure_probe():
+    health = infrastructure_health()
+    required = [s for s in health["services"] if s["kind"] in ("database","policy","settlement")]
+    required_online = all((not s["configured"]) or s["reachable"] for s in required)
+    return {
+        "status": "ok" if required_online else "degraded",
+        "required_online": required_online,
+        "summary": health["summary"],
+        "services": health["services"],
+    }
