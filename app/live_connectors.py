@@ -13,9 +13,10 @@ class Connector:
     health_path: str = "/health"
     auth_header_env: str | None = None
     auth_prefix: str = "Bearer"
+    default_url: str | None = None
 
     def configured(self) -> bool:
-        return bool(os.getenv(self.base_url_env))
+        return bool(os.getenv(self.base_url_env) or self.default_url)
 
     def _headers(self) -> dict[str,str]:
         if not self.auth_header_env:
@@ -24,7 +25,7 @@ class Connector:
         return {"Authorization":f"{self.auth_prefix} {token}"} if token else {}
 
     def health(self) -> dict[str,Any]:
-        url=os.getenv(self.base_url_env)
+        url=os.getenv(self.base_url_env) or self.default_url
         if not url:
             return {"name":self.name,"kind":self.kind,"configured":False,"reachable":False,"status":"not_configured"}
         started=time.perf_counter()
@@ -43,8 +44,8 @@ CONNECTORS=[
     Connector("Exporter Buyer","buyer","BUYER_EXPORTER_API_URL","/health","BUYER_EXPORTER_API_TOKEN"),
     Connector("Processor Buyer","buyer","BUYER_PROCESSOR_API_URL","/health","BUYER_PROCESSOR_API_TOKEN"),
     Connector("Roaster Buyer","buyer","BUYER_ROASTER_API_URL","/health","BUYER_ROASTER_API_TOKEN"),
-    Connector("International Market Feed","market","MARKET_INTL_API_URL","/health","MARKET_INTL_API_TOKEN"),
-    Connector("Uganda Market Feed","market","MARKET_UG_API_URL","/health","MARKET_UG_API_TOKEN"),
+    Connector("International Market Feed","market","MARKET_INTL_API_URL","/graph/fredgraph.csv?id=PCOFFOTMUSDM","MARKET_INTL_API_TOKEN","Bearer","https://fred.stlouisfed.org"),
+    Connector("Uganda Market Feed","market","MARKET_UG_API_URL","/resource-center/statistics","MARKET_UG_API_TOKEN","Bearer","https://new.ugandacoffee.go.ug"),
 ]
 
 def database_health():
