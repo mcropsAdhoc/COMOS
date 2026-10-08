@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, time, csv, io
+import os, time, csv, io, re, html
 from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Literal, Any
@@ -512,3 +512,73 @@ def infrastructure_probe():
         "summary": health["summary"],
         "services": health["services"],
     }
+
+
+UCDA_STATS_URL = "https://new.ugandacoffee.go.ug/resource-center/statistics"
+
+@router.post("/market/public/ucda/coffee/sync")
+def ucda_coffee_sync():
+    try:
+        r=httpx.get(UCDA_STATS_URL,timeout=12,follow_redirects=True,headers={"User-Agent":"COMMOS/0.2 market adapter"})
+        r.raise_for_status()
+        text_body=html.unescape(re.sub(r"<[^>]+>", " ", r.text))
+        text_body=re.sub(r"\s+", " ", text_body)
+    except Exception as e:
+        raise HTTPException(502,f"UCDA feed unavailable: {type(e).__name__}")
+
+    grade_patterns = {
+        "Robusta Screen 18": r"Screen 18\s+([0-9]+(?:\.[0-9]+)?)",
+        "Robusta Screen 15": r"Robusta\s*[–-]\s*Screen 15\s+([0-9]+(?:\.[0-9]+)?)",
+        "Robusta Screen 12": r"Robusta\s*[–-]\s*Screen 12\s+([0-9]+(?:\.[0-9]+)?)",
+        "Arabica Bugisu AA": r"Arabicas\s*[–-]\s*Bugisu AA\s+([0-9]+(?:\.[0-9]+)?)",
+        "Arabica Bugisu A": r"Arabicas\s*[–-]\s*Bugisu A\s+([0-9]+(?:\.[0-9]+)?)",
+        "Arabica Bugisu PB": r"Arabicas\s*[–-]\s*Bugisu PB\s+([0-9]+(?:\.[0-9]+)?)",
+        "Arabica Bugisu B": r"Arabicas\s*[–-]\s*Bugisu B\s+([0-9]+(?:\.[0-9]+)?)",
+        "Arabica Wugar": r"Arabicas\s*[–-]\s*Wugar\s+([0-9]+(?:\.[0-9]+)?)",
+        "Arabica Drugar": r"Arabicas\s*[–-]\s*Drugar\s+([0-9]+(?:\.[0-9]+)?)",
+    }
+    farmgate_patterns = {
+        "Kiboko": r"Kiboko\s+([0-9,]+)\s*(?:/=)?\s*[-–]\s*([0-9,]+)",
+        "FAQ": r"FAQ\s+([0-9,]+)\s*(?:/=)?\s*[-–]\s*([0-9,]+)",
+        "Arabica Parchment": r"ARABICA PARCHMENT\s+([0-9,]+)\s*(?:/=)?\s*[-–]\s*([0-9,]+)",
+        "Drugar Clean": r"DRUGAR COFFEE \(CLEAN\)\s+([0-9,]+)\s*(?:/=)?\s*[-–]\s*([0-9,]+)",
+    }
+
+    saved=[]
+    for label, pattern in grade_patterns.items():
+        m=re.search(pattern,text_body,re.IGNORECASE)
+        if not m:
+            continue
+        value=float(m.group(1))
+        saved.append(create_market_observation({
+            "commodity":"coffee",
+            "market":f"Uganda UCDA · {label}",
+            "price":value,
+            "currency":"N/A",
+            "price_unit":"UCDA_published_unit",
+            "source":"UCDA",
+            "region":"Uganda",
+            "metadata":{"official_url":UCDA_STATS_URL,"grade":label,"source_type":"daily_market_price"}
+        }))
+
+    for label, pattern in farmgate_patterns.items():
+        m=re.search(pattern,text_body,re.IGNORECASE)
+        if not m:
+            continue
+        low=float(m.group(1).replace(",",""))
+        high=float(m.group(2).replace(",",""))
+        midpoint=round((low+high)/2,2)
+        saved.append(create_market_observation({
+            "commodity":"coffee",
+            "market":f"Uganda Farmgate · {label}",
+            "price":midpoint,
+            "currency":"UGX",
+            "price_unit":"kg",
+            "source":"UCDA",
+            "region":"Uganda",
+            "metadata":{"official_url":UCDA_STATS_URL,"product":label,"min_price":low,"max_price":high,"source_type":"farmgate_range"}
+        }))
+
+    if not saved:
+        raise HTTPException(502,"UCDA page was reachable but no known price fields could be parsed")
+    return {"source":"UCDA","official_url":UCDA_STATS_URL,"persisted":len(saved),"observations":saved}
