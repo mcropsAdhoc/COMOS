@@ -7,8 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from app.db import db_session
 from app.security import current_principal
-from app.commos_models import CommodityLot, Order, LotReservation, TradeConfirmation, CounterpartyExposure
-from app.financials import record_ownership_event
+from app.commos_models import CommodityLot, Order, LotReservation, TradeConfirmation, CounterpartyExposure, OwnershipEvent
 
 router=APIRouter(prefix="/v1/commos/market-integrity",tags=["COMMOS Market Integrity"])
 
@@ -85,7 +84,10 @@ def title_transfer(body:TitleTransferRequest):
         lot=s.execute(select(CommodityLot).where(CommodityLot.id==body.lot_id).with_for_update()).scalar_one_or_none()
         if not lot:raise HTTPException(404,"lot not found")
         from_owner=lot.owner_id
-        event=record_ownership_event(body.lot_id,from_owner,body.to_owner,"settled-transfer",body.settlement_reference,p.subject)
-        lot.owner_id=body.to_owner;lot.version+=1
-        lot.status="sold"
-        return {**event,"version":lot.version}
+        eid=f"own_{uuid4().hex[:16]}"
+        s.add(OwnershipEvent(
+            id=eid,lot_id=body.lot_id,from_owner=from_owner,to_owner=body.to_owner,
+            event_type="settled-transfer",reference=body.settlement_reference,principal_sub=p.subject
+        ))
+        lot.owner_id=body.to_owner;lot.version+=1;lot.status="sold"
+        return {"event_id":eid,"lot_id":body.lot_id,"from_owner":from_owner,"to_owner":body.to_owner,"event_type":"settled-transfer","version":lot.version}
