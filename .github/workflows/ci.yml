@@ -28,14 +28,26 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://commos:commos@localhost:5432/commos_test
       COMMOS_AUTH_MODE: dev
+      COMMOS_AUTH_REQUIRED: "false"
       COMMOS_DEV_JWT_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
       OIDC_AUDIENCE: commos-api
+      OPA_URL: http://127.0.0.1:8181
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install -r requirements.txt
+      - uses: open-policy-agent/setup-opa@v2
+      - name: Start OPA test server
+        run: |
+          opa run --server --addr=127.0.0.1:8181 policies/commos.rego >/tmp/opa.log 2>&1 &
+          for i in {1..20}; do
+            curl -sf http://127.0.0.1:8181/health && exit 0
+            sleep 0.5
+          done
+          cat /tmp/opa.log
+          exit 1
       - run: alembic upgrade head
       - run: pytest -q
       - run: alembic check
