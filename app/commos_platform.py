@@ -14,6 +14,7 @@ from app.commos_repository import get_lot, create_market_observation, latest_mar
 from app.live_connectors import infrastructure_health
 from app.security import current_principal
 from app.financials import reserve_idempotency, complete_idempotency, post_balanced_transaction
+from app.agent_control import authorize_capability
 
 router = APIRouter(prefix="/v1/commos", tags=["COMMOS Platform"])
 CRITICAL_ACTIONS={"trade.execute","settlement.execute","warehouse.lien.create","forward.activate","ownership.transfer","loan.originate"}
@@ -295,6 +296,9 @@ def local_policy(body:PolicyEvaluate):
 
 @router.post("/policy/evaluate")
 def policy_evaluate(body:PolicyEvaluate):
+    principal=current_principal()
+    actor_type="agent_service" if "agent_service" in principal.roles else "buyer" if "buyer" in principal.roles else "operator"
+    body=PolicyEvaluate(institution_id=principal.institution_id,actor_type=actor_type,action=body.action,context={**body.context,"tenant_id":principal.tenant_id,"principal_sub":principal.subject})
     opa=os.getenv("OPA_URL")
     if opa:
         try:
@@ -377,6 +381,8 @@ def observability_traces(limit:int=100):
           "created_at":x.created_at.isoformat()} for x in rows]
 
 def invoke_tool(name:str,args:dict):
+    exposure=Decimal(str(args.get("gross_value",0))) if name=="agpay.settle" else Decimal("0")
+    authorize_capability(name,monetary_exposure=exposure,currency=args.get("currency","USD"))
     if name=="planner.plan":return deterministic_plan(PlanRequest(**args))
     if name=="orderbook.create":return order_create(OrderCreate(**args))
     if name=="orderbook.list":return order_list(**args)
@@ -394,7 +400,7 @@ def invoke_tool(name:str,args:dict):
 
 @router.get("/mcp")
 def mcp_manifest():
-    return {"name":"COMMOS","protocol":"MCP-compatible JSON-RPC gateway","version":"0.2.0","transport":"HTTP","tools":TOOL_MANIFEST}
+    return {"name":"COMMOS","protocol":"MCP-compatible JSON-RPC gateway","version":"0.3.0","transport":"HTTP","authentication":"OIDC bearer","tools":[{**t,"required_scope":__import__("app.agent_control",fromlist=["CAPABILITY_SCOPES"]).CAPABILITY_SCOPES.get(t["name"])} for t in TOOL_MANIFEST]}
 
 @router.post("/mcp")
 def mcp_rpc(body:JsonRpcRequest, mcp_session_id:str|None=Header(default=None,alias="Mcp-Session-Id")):
