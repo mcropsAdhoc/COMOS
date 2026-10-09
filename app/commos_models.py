@@ -211,3 +211,83 @@ class ApprovalRecord(Base):
     policy_decision: Mapped[dict]=mapped_column(JSON)
     token_jti: Mapped[str|None]=mapped_column(String(160),nullable=True)
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
+
+
+class LotReservation(Base):
+    __tablename__="commos_lot_reservations"
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    lot_id: Mapped[str]=mapped_column(String(128),index=True)
+    order_id: Mapped[str|None]=mapped_column(String(64),nullable=True,index=True)
+    reserved_for: Mapped[str]=mapped_column(String(160),index=True)
+    quantity: Mapped[Decimal]=mapped_column(QTY)
+    status: Mapped[str]=mapped_column(String(24),default="active",index=True)
+    expires_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    version: Mapped[int]=mapped_column(Integer,default=1,nullable=False)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
+
+class TradeConfirmation(Base):
+    __tablename__="commos_trade_confirmations"
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    order_id: Mapped[str]=mapped_column(String(64),index=True)
+    lot_id: Mapped[str]=mapped_column(String(128),index=True)
+    buyer_id: Mapped[str]=mapped_column(String(160),index=True)
+    seller_id: Mapped[str]=mapped_column(String(160),index=True)
+    quantity: Mapped[Decimal]=mapped_column(QTY)
+    unit_price: Mapped[Decimal]=mapped_column(MONEY)
+    gross_value: Mapped[Decimal]=mapped_column(MONEY)
+    currency: Mapped[str]=mapped_column(String(8))
+    status: Mapped[str]=mapped_column(String(24),default="confirmed",index=True)
+    confirmation_hash: Mapped[str]=mapped_column(String(128),unique=True)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
+
+class CounterpartyExposure(Base):
+    __tablename__="commos_counterparty_exposure"
+    id: Mapped[str]=mapped_column(String(160),primary_key=True)
+    counterparty_id: Mapped[str]=mapped_column(String(160),index=True)
+    currency: Mapped[str]=mapped_column(String(8))
+    current_exposure: Mapped[Decimal]=mapped_column(MONEY,default=Decimal("0"))
+    limit_amount: Mapped[Decimal]=mapped_column(MONEY,default=Decimal("0"))
+    updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow,onupdate=utcnow)
+
+class EvidenceRecord(Base):
+    __tablename__="commos_evidence_records"
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    subject_type: Mapped[str]=mapped_column(String(40),index=True)
+    subject_id: Mapped[str]=mapped_column(String(160),index=True)
+    evidence_type: Mapped[str]=mapped_column(String(80),index=True)
+    source: Mapped[str]=mapped_column(String(160))
+    content_hash: Mapped[str]=mapped_column(String(128),index=True)
+    uri: Mapped[str|None]=mapped_column(Text,nullable=True)
+    metadata_json: Mapped[dict]=mapped_column(JSON,default=dict)
+    observed_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
+
+class WarehouseReceiptEvent(Base):
+    __tablename__="commos_warehouse_receipt_events"
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    receipt_id: Mapped[str]=mapped_column(String(64),index=True)
+    event_type: Mapped[str]=mapped_column(String(60),index=True)
+    principal_sub: Mapped[str]=mapped_column(String(160))
+    payload: Mapped[dict]=mapped_column(JSON,default=dict)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
+
+class ModelExecution(Base):
+    __tablename__="commos_model_executions"
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    run_id: Mapped[str]=mapped_column(String(64),index=True)
+    model_name: Mapped[str]=mapped_column(String(120),index=True)
+    model_version: Mapped[str]=mapped_column(String(80))
+    input_hash: Mapped[str]=mapped_column(String(128))
+    output_hash: Mapped[str]=mapped_column(String(128))
+    provenance: Mapped[dict]=mapped_column(JSON,default=dict)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
+
+class CapabilityUsage(Base):
+    __tablename__="commos_capability_usage"
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    principal_sub: Mapped[str]=mapped_column(String(160),index=True)
+    tenant_id: Mapped[str]=mapped_column(String(160),index=True)
+    capability: Mapped[str]=mapped_column(String(120),index=True)
+    monetary_exposure: Mapped[Decimal]=mapped_column(MONEY,default=Decimal("0"))
+    currency: Mapped[str]=mapped_column(String(8),default="USD")
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow,index=True)
