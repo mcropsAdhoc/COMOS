@@ -1,0 +1,21 @@
+service: COMMOS
+slos:
+  api_availability:
+    target: 99.95
+    window: 30d
+  read_p95_ms:
+    target: 500
+  skill_p95_ms:
+    target: 2000
+  settlement_submit_p95_ms:
+    target: 5000
+  failed_settlement_rate_percent:
+    target: 0.1
+  ledger_imbalance_count:
+    target: 0
+  duplicate_settlement_count:
+    target: 0
+  unauthorized_critical_execution_count:
+    target: 0
+  lost_audit_event_count:
+    target: 0

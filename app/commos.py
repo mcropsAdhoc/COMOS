@@ -1,9 +1,12 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import uuid4
 from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from app.db import init_db
+from app.db import init_db, db_session
+from app.security import current_principal
+from app.commos_models import ApprovalRecord
 from app.commos_repository import create_lot as persist_lot, get_lot as persisted_lot, create_run as persist_run, get_run as persisted_run, update_run as persist_update_run, create_proposal as persist_proposal, get_proposal as persisted_proposal, update_proposal as persist_update_proposal
 
 router = APIRouter(prefix="/v1/commos", tags=["COMMOS"])
@@ -38,7 +41,7 @@ def _emit(event_type: str, entity_id: str, payload=None):
 class CommodityLotCreate(BaseModel):
     commodity: str
     origin_country: str = "UG"
-    quantity: float = Field(gt=0)
+    quantity: Decimal = Field(gt=0)
     unit: str = "kg"
     grade: str | None = None
     owner_id: str
@@ -48,7 +51,7 @@ class CommodityLotCreate(BaseModel):
 
 class MarketQuoteRequest(BaseModel):
     lot_id: str
-    reference_price: float = Field(gt=0)
+    reference_price: Decimal = Field(gt=0)
     currency: str = "USD"
     price_unit: str = "kg"
 
@@ -57,21 +60,21 @@ class HarnessIntent(BaseModel):
     lot_id: str
     requested_by: str
     institution: str | None = None
-    target_price: float | None = None
+    target_price: Decimal | None = None
     currency: str = "USD"
     notes: str | None = None
 
 
 class FinanceAssessRequest(BaseModel):
     lot_id: str
-    reference_unit_price: float = Field(gt=0)
-    advance_rate: float = Field(default=0.6, gt=0, le=0.9)
+    reference_unit_price: Decimal = Field(gt=0)
+    advance_rate: Decimal = Field(default=Decimal("0.6"), gt=0, le=Decimal("0.9"))
     currency: str = "USD"
 
 class RiskAssessRequest(BaseModel):
     lot_id: str
-    reference_unit_price: float = Field(gt=0)
-    downside_percent: float = Field(default=15, ge=0, le=100)
+    reference_unit_price: Decimal = Field(gt=0)
+    downside_percent: Decimal = Field(default=Decimal("15"), ge=0, le=Decimal("100"))
     currency: str = "USD"
 
 class ComplianceCheckRequest(BaseModel):
@@ -82,17 +85,17 @@ class ComplianceCheckRequest(BaseModel):
 
 class SettlementPreviewRequest(BaseModel):
     lot_id: str
-    gross_value: float = Field(gt=0)
+    gross_value: Decimal = Field(gt=0)
     currency: str = "USD"
-    lender_percent: float = Field(default=0, ge=0, le=100)
-    insurance_percent: float = Field(default=0, ge=0, le=100)
-    cooperative_percent: float = Field(default=0, ge=0, le=100)
-    platform_percent: float = Field(default=0, ge=0, le=100)
+    lender_percent: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("100"))
+    insurance_percent: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("100"))
+    cooperative_percent: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("100"))
+    platform_percent: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("100"))
 
 class TradeProposalCreate(BaseModel):
     run_id: str
     buyer_id: str
-    unit_price: float = Field(gt=0)
+    unit_price: Decimal = Field(gt=0)
     currency: str = "USD"
 
 def _plan_for(intent: str):
@@ -171,7 +174,7 @@ def finance_assess(body: FinanceAssessRequest):
     if not lot:
         raise HTTPException(404, "commodity lot not found")
     reference_value = round(lot["quantity"] * body.reference_unit_price, 2)
-    max_facility = round(reference_value * body.advance_rate, 2)
+    max_facility = (reference_value * body.advance_rate).quantize(Decimal("0.01"))
     result = {
         "lot_id": body.lot_id,
         "reference_value": reference_value,
@@ -190,7 +193,7 @@ def risk_assess(body: RiskAssessRequest):
     if not lot:
         raise HTTPException(404, "commodity lot not found")
     reference_value = round(lot["quantity"] * body.reference_unit_price, 2)
-    stressed_value = round(reference_value * (1 - body.downside_percent / 100), 2)
+    stressed_value = (reference_value * (Decimal("1") - body.downside_percent / Decimal("100"))).quantize(Decimal("0.01"))
     flags = []
     if not lot.get("warehouse_id"):
         flags.append("no_warehouse_custody")
@@ -232,15 +235,15 @@ def settlement_preview(body: SettlementPreviewRequest):
     if not lot:
         raise HTTPException(404, "commodity lot not found")
     fixed = body.lender_percent + body.insurance_percent + body.cooperative_percent + body.platform_percent
-    if fixed > 100:
+    if fixed > Decimal("100"):
         raise HTTPException(422, "settlement percentages exceed 100")
-    farmer_percent = 100 - fixed
+    farmer_percent = Decimal("100") - fixed
     allocations = {
-        "lender": round(body.gross_value * body.lender_percent / 100, 2),
-        "insurance": round(body.gross_value * body.insurance_percent / 100, 2),
-        "cooperative": round(body.gross_value * body.cooperative_percent / 100, 2),
-        "platform": round(body.gross_value * body.platform_percent / 100, 2),
-        "owner_residual": round(body.gross_value * farmer_percent / 100, 2),
+        "lender": round(body.gross_value * body.lender_percent / Decimal("100"), 2),
+        "insurance": round(body.gross_value * body.insurance_percent / Decimal("100"), 2),
+        "cooperative": round(body.gross_value * body.cooperative_percent / Decimal("100"), 2),
+        "platform": round(body.gross_value * body.platform_percent / Decimal("100"), 2),
+        "owner_residual": round(body.gross_value * farmer_percent / Decimal("100"), 2),
     }
     result = {
         "lot_id": body.lot_id,
@@ -288,21 +291,32 @@ def create_run(body: HarnessIntent):
     return stored
 
 @router.post("/runs/{run_id}/approve")
-def approve_run(run_id: str, approved_by: str):
+def approve_run(run_id: str):
     init_db()
     run = persisted_run(run_id) or agent_runs.get(run_id)
     if not run:
         raise HTTPException(404, "COMMOS run not found")
+    principal=current_principal()
     run["approval"] = {
         "required":run["approval"]["required"],
         "approved":True,
-        "approved_by":approved_by,
+        "approved_by":principal.subject,
+        "tenant_id":principal.tenant_id,
+        "institution_id":principal.institution_id,
+        "token_jti":principal.token_id,
         "approved_at":datetime.now(timezone.utc).isoformat(),
     }
     run["status"] = "approved"
     run = persist_update_run(run_id, status="approved", approval=run["approval"]) or run
     agent_runs[run_id] = run
-    _emit("commos.run.approved", run_id, {"approved_by":approved_by})
+    with db_session() as s:
+        s.add(ApprovalRecord(
+            id=f"apr_{uuid4().hex[:16]}", run_id=run_id, action="run.approve",
+            principal_sub=principal.subject, tenant_id=principal.tenant_id,
+            institution_id=principal.institution_id, policy_source="authenticated-principal",
+            policy_decision={"allow":True,"requires_approval":True}, token_jti=principal.token_id
+        ))
+    _emit("commos.run.approved", run_id, {"approved_by":principal.subject,"institution_id":principal.institution_id})
     return run
 
 @router.post("/trade/proposals")
