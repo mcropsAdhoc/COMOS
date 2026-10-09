@@ -9,7 +9,11 @@ depends_on=None
 money=sa.Numeric(24,8)
 
 def upgrade():
-    op.create_table("commos_lot_reservations",
+    insp=sa.inspect(op.get_bind())
+    def create(name, *cols):
+        if not insp.has_table(name):
+            op.create_table(name,*cols)
+    create("commos_lot_reservations",
       sa.Column("id",sa.String(64),primary_key=True),
       sa.Column("lot_id",sa.String(128),nullable=False),
       sa.Column("order_id",sa.String(64),nullable=True),
@@ -19,7 +23,7 @@ def upgrade():
       sa.Column("expires_at",sa.DateTime(timezone=True),nullable=False),
       sa.Column("version",sa.Integer(),nullable=False,server_default="1"),
       sa.Column("created_at",sa.DateTime(timezone=True),nullable=False))
-    op.create_table("commos_trade_confirmations",
+    create("commos_trade_confirmations",
       sa.Column("id",sa.String(64),primary_key=True),
       sa.Column("order_id",sa.String(64),nullable=False),
       sa.Column("lot_id",sa.String(128),nullable=False),
@@ -32,14 +36,14 @@ def upgrade():
       sa.Column("status",sa.String(24),nullable=False,server_default="confirmed"),
       sa.Column("confirmation_hash",sa.String(128),nullable=False,unique=True),
       sa.Column("created_at",sa.DateTime(timezone=True),nullable=False))
-    op.create_table("commos_counterparty_exposure",
+    create("commos_counterparty_exposure",
       sa.Column("id",sa.String(160),primary_key=True),
       sa.Column("counterparty_id",sa.String(160),nullable=False),
       sa.Column("currency",sa.String(8),nullable=False),
       sa.Column("current_exposure",money,nullable=False,server_default="0"),
       sa.Column("limit_amount",money,nullable=False,server_default="0"),
       sa.Column("updated_at",sa.DateTime(timezone=True),nullable=False))
-    op.create_table("commos_evidence_records",
+    create("commos_evidence_records",
       sa.Column("id",sa.String(64),primary_key=True),
       sa.Column("subject_type",sa.String(40),nullable=False),
       sa.Column("subject_id",sa.String(160),nullable=False),
@@ -50,14 +54,14 @@ def upgrade():
       sa.Column("metadata_json",sa.JSON(),nullable=False),
       sa.Column("observed_at",sa.DateTime(timezone=True),nullable=False),
       sa.Column("created_at",sa.DateTime(timezone=True),nullable=False))
-    op.create_table("commos_warehouse_receipt_events",
+    create("commos_warehouse_receipt_events",
       sa.Column("id",sa.String(64),primary_key=True),
       sa.Column("receipt_id",sa.String(64),nullable=False),
       sa.Column("event_type",sa.String(60),nullable=False),
       sa.Column("principal_sub",sa.String(160),nullable=False),
       sa.Column("payload",sa.JSON(),nullable=False),
       sa.Column("created_at",sa.DateTime(timezone=True),nullable=False))
-    op.create_table("commos_model_executions",
+    create("commos_model_executions",
       sa.Column("id",sa.String(64),primary_key=True),
       sa.Column("run_id",sa.String(64),nullable=False),
       sa.Column("model_name",sa.String(120),nullable=False),
@@ -66,7 +70,7 @@ def upgrade():
       sa.Column("output_hash",sa.String(128),nullable=False),
       sa.Column("provenance",sa.JSON(),nullable=False),
       sa.Column("created_at",sa.DateTime(timezone=True),nullable=False))
-    op.create_table("commos_capability_usage",
+    create("commos_capability_usage",
       sa.Column("id",sa.String(64),primary_key=True),
       sa.Column("principal_sub",sa.String(160),nullable=False),
       sa.Column("tenant_id",sa.String(160),nullable=False),
