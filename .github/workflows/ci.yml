@@ -30,6 +30,7 @@ jobs:
       COMMOS_AUTH_MODE: dev
       COMMOS_DEV_JWT_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
       OIDC_AUDIENCE: commos-api
+      PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
