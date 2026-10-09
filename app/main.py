@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-import os, hmac
+import os
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from app.commos import router as commos_router
 from app.commos_platform import router as commos_platform_router
+from app.security import principal_from_authorization, set_current_principal, reset_current_principal
 
 app = FastAPI(title="DCF AgrOS Agent-Native Infrastructure", version="0.3.0")
 cors_origins = [x.strip() for x in os.getenv("COMMOS_CORS_ORIGINS", "*").split(",") if x.strip()]
@@ -17,16 +18,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+PUBLIC_PATHS={"/health","/docs","/openapi.json","/v1/dashboard/public-summary","/v1/commos/dashboard"}
+
 @app.middleware("http")
-async def commos_api_key_guard(request, call_next):
-    require_key = os.getenv("COMMOS_REQUIRE_API_KEY", "false").lower() == "true"
-    protected = request.url.path.startswith("/v1/commos") and request.method not in ("GET", "HEAD", "OPTIONS")
-    if require_key and protected:
-        expected = os.getenv("COMMOS_API_KEY", "")
-        supplied = request.headers.get("X-COMMOS-API-KEY", "")
-        if not expected or not hmac.compare_digest(supplied, expected):
-            return JSONResponse({"detail": "valid X-COMMOS-API-KEY required"}, status_code=401)
-    return await call_next(request)
+async def commos_auth_guard(request, call_next):
+    required=os.getenv("COMMOS_AUTH_REQUIRED","true").lower()=="true"
+    protected=request.url.path.startswith("/v1") and request.url.path not in PUBLIC_PATHS and request.method!="OPTIONS"
+    ctx=None
+    if required and protected:
+        try:
+            principal=principal_from_authorization(request.headers.get("Authorization"))
+            request.state.principal=principal
+            ctx=set_current_principal(principal)
+        except HTTPException as exc:
+            return JSONResponse({"detail":exc.detail},status_code=exc.status_code)
+    try:
+        return await call_next(request)
+    finally:
+        if ctx is not None:
+            reset_current_principal(ctx)
 app.include_router(commos_router)
 app.include_router(commos_platform_router)
 
