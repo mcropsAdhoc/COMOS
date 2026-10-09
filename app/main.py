@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 import os
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Header
@@ -7,7 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from app.commos import router as commos_router
 from app.commos_platform import router as commos_platform_router
-from app.security import principal_from_authorization, set_current_principal, reset_current_principal
+from app.security import Principal, current_principal, principal_from_authorization, set_current_principal, reset_current_principal
 
 app = FastAPI(title="DCF AgrOS Agent-Native Infrastructure", version="0.3.0")
 cors_origins = [x.strip() for x in os.getenv("COMMOS_CORS_ORIGINS", "*").split(",") if x.strip()]
@@ -25,9 +26,17 @@ async def commos_auth_guard(request, call_next):
     required=os.getenv("COMMOS_AUTH_REQUIRED","true").lower()=="true"
     protected=request.url.path.startswith("/v1") and request.url.path not in PUBLIC_PATHS and request.method!="OPTIONS"
     ctx=None
-    if required and protected:
+    if protected:
         try:
-            principal=principal_from_authorization(request.headers.get("Authorization"))
+            if required:
+                principal=principal_from_authorization(request.headers.get("Authorization"))
+            else:
+                principal=Principal(
+                    subject=os.getenv("COMMOS_DEV_SUBJECT","dev-user"),
+                    tenant_id=os.getenv("COMMOS_DEV_TENANT","dev"),
+                    institution_id=os.getenv("COMMOS_DEV_INSTITUTION","dcf"),
+                    roles=("dcf_admin","bank_approver"),scopes=("*",),token_id="dev-token",auth_method="dev-bypass"
+                )
             request.state.principal=principal
             ctx=set_current_principal(principal)
         except HTTPException as exc:
@@ -60,13 +69,13 @@ class EdgeCreate(BaseModel):
 
 class CreditRequest(BaseModel):
     farmer_id: str
-    requested_amount: float = Field(gt=0)
-    estimated_harvest_value: float = Field(gt=0)
+    requested_amount: Decimal = Field(gt=0)
+    estimated_harvest_value: Decimal = Field(gt=0)
 
 class AgentPlan(BaseModel):
     intent: str
     farmer_id: str
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0)
 
 class PaymentRequest(BaseModel):
     payee_id: str
@@ -140,8 +149,11 @@ def agent_plan(body: AgentPlan):
 def approve(session_id: str):
     if session_id not in sessions:
         raise HTTPException(404, "session not found")
-    sessions[session_id]["status"] = "approved"
-    emit("agent.plan.approved", session_id)
+    principal=current_principal()
+    sessions[session_id]["status"]="approved"
+    sessions[session_id]["approved_by"]=principal.subject
+    sessions[session_id]["institution_id"]=principal.institution_id
+    emit("agent.plan.approved",session_id,{"approved_by":principal.subject,"institution_id":principal.institution_id})
     return sessions[session_id]
 
 @app.post("/v1/skills/payment.disburse")
