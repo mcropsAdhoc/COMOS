@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from app.commos import router as commos_router
 from app.commos_platform import router as commos_platform_router
+from app.market_integrity import router as market_integrity_router
+from app.compliance_governance import router as compliance_governance_router
 from app.security import Principal, current_principal, principal_from_authorization, set_current_principal, reset_current_principal
 
 app = FastAPI(title="DCF AgrOS Agent-Native Infrastructure", version="0.3.0")
@@ -48,6 +50,8 @@ async def commos_auth_guard(request, call_next):
             reset_current_principal(ctx)
 app.include_router(commos_router)
 app.include_router(commos_platform_router)
+app.include_router(market_integrity_router)
+app.include_router(compliance_governance_router)
 
 identities = {}
 edges = []
