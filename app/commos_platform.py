@@ -1,6 +1,7 @@
 from __future__ import annotations
-import os, time, csv, io, re, html
+import os, time, csv, io, re, html, hashlib, json
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import uuid4
 from typing import Literal, Any
 import httpx
@@ -8,11 +9,14 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from app.db import db_session, init_db
-from app.commos_models import Order, WarehouseReceipt, ForwardContract, EudrEvidencePack, PolicyRule, AgentTrace, CommodityLot
+from app.commos_models import Order, WarehouseReceipt, ForwardContract, EudrEvidencePack, PolicyRule, AgentTrace, CommodityLot, ApprovalRecord
 from app.commos_repository import get_lot, create_market_observation, latest_market_observations
 from app.live_connectors import infrastructure_health
+from app.security import current_principal
+from app.financials import reserve_idempotency, complete_idempotency, post_balanced_transaction
 
 router = APIRouter(prefix="/v1/commos", tags=["COMMOS Platform"])
+CRITICAL_ACTIONS={"trade.execute","settlement.execute","warehouse.lien.create","forward.activate","ownership.transfer","loan.originate"}
 
 SKILL_GRAPH = {
     "sell":["market.quote","risk.assess","compliance.check","orderbook.offer.create","trade.execute","settlement.execute"],
@@ -55,10 +59,10 @@ class OrderCreate(BaseModel):
     side: Literal["buy","sell"]
     commodity: str
     actor_id: str
-    quantity: float = Field(gt=0)
+    quantity: Decimal = Field(gt=0)
     unit: str = "kg"
     lot_id: str | None = None
-    limit_price: float | None = None
+    limit_price: Decimal | None = None
     currency: str = "USD"
     terms: dict = {}
     expires_at: datetime | None = None
@@ -69,19 +73,19 @@ class ReceiptCreate(BaseModel):
     custodian_id: str
     owner_id: str
     lien_holder_id: str | None = None
-    collateral_value: float | None = None
+    collateral_value: Decimal | None = None
     currency: str = "USD"
 
 class BuyerQuoteRequest(BaseModel):
     buyer_connector: str
     lot_id: str
-    reference_price: float = Field(gt=0)
+    reference_price: Decimal = Field(gt=0)
     currency: str = "USD"
 
 class ObservationCreate(BaseModel):
     commodity: str
     market: str
-    price: float = Field(gt=0)
+    price: Decimal = Field(gt=0)
     currency: str = "USD"
     price_unit: str = "kg"
     source: str
@@ -92,18 +96,18 @@ class ForwardCreate(BaseModel):
     commodity: str
     seller_id: str
     buyer_id: str
-    quantity: float = Field(gt=0)
+    quantity: Decimal = Field(gt=0)
     unit: str = "kg"
     delivery_date: datetime
-    fixed_price: float = Field(gt=0)
+    fixed_price: Decimal = Field(gt=0)
     currency: str = "USD"
     hedge_metadata: dict = {}
 
 class HedgeRequest(BaseModel):
-    exposure_quantity: float = Field(gt=0)
-    forward_quantity: float = Field(ge=0)
-    spot_reference: float = Field(gt=0)
-    forward_price: float = Field(gt=0)
+    exposure_quantity: Decimal = Field(gt=0)
+    forward_quantity: Decimal = Field(ge=0)
+    spot_reference: Decimal = Field(gt=0)
+    forward_price: Decimal = Field(gt=0)
 
 class EudrRequest(BaseModel):
     lot_id: str
@@ -117,10 +121,10 @@ class PolicyEvaluate(BaseModel):
 
 class SettlementRequest(BaseModel):
     lot_id: str
-    gross_value: float = Field(gt=0)
+    gross_value: Decimal = Field(gt=0)
     currency: str = "USD"
-    allocations: dict[str,float]
-    approved_by: str
+    allocations: dict[str,Decimal]
+    approved_by: str | None = None
     approval_reference: str
     idempotency_key: str
 
@@ -285,8 +289,9 @@ def local_policy(body:PolicyEvaluate):
           PolicyRule.actor_type==body.actor_type,PolicyRule.action==body.action)).all()
     if rows:
         r=rows[0];return {"allow":r.effect=="allow","requires_approval":r.requires_approval,"source":"local-policy","rule_id":r.id}
-    critical=body.action in {"trade.execute","settlement.execute","warehouse.lien.create"}
-    return {"allow":True,"requires_approval":critical,"source":"default-policy","rule_id":None}
+    return {"allow":False if body.action in CRITICAL_ACTIONS else True,
+            "requires_approval":body.action in CRITICAL_ACTIONS,
+            "source":"default-deny-critical","rule_id":None}
 
 @router.post("/policy/evaluate")
 def policy_evaluate(body:PolicyEvaluate):
@@ -296,24 +301,54 @@ def policy_evaluate(body:PolicyEvaluate):
             res=httpx.post(opa.rstrip("/")+"/v1/data/commos/decision",json={"input":body.model_dump()},timeout=3)
             res.raise_for_status(); data=res.json().get("result")
             if isinstance(data,dict): return {**data,"source":"opa"}
-        except Exception:
-            pass
+        except Exception as exc:
+            if body.action in CRITICAL_ACTIONS:
+                return {"allow":False,"requires_approval":True,"source":"opa-fail-closed","reason":type(exc).__name__}
+    if body.action in CRITICAL_ACTIONS and not opa:
+        return {"allow":False,"requires_approval":True,"source":"opa-not-configured","reason":"critical actions require OPA"}
     return local_policy(body)
 
 @router.post("/agpay/settlements")
 def agpay_settle(body:SettlementRequest):
-    total=round(sum(body.allocations.values()),2)
-    if total!=round(body.gross_value,2):raise HTTPException(422,"allocations must equal gross value")
-    decision=local_policy(PolicyEvaluate(institution_id="dcf",actor_type="operator",action="settlement.execute",
-      context={"gross_value":body.gross_value,"currency":body.currency}))
-    if decision["requires_approval"] and not body.approval_reference:
+    principal=current_principal()
+    total=sum(body.allocations.values(),Decimal("0"))
+    if total.quantize(Decimal("0.00000001"))!=body.gross_value.quantize(Decimal("0.00000001")):
+        raise HTTPException(422,"allocations must equal gross value")
+    decision=policy_evaluate(PolicyEvaluate(
+        institution_id=principal.institution_id,actor_type="operator",action="settlement.execute",
+        context={"gross_value":str(body.gross_value),"currency":body.currency,"tenant_id":principal.tenant_id}
+    ))
+    if not decision.get("allow"):
+        raise HTTPException(403,"policy denied settlement")
+    if decision.get("requires_approval") and not body.approval_reference:
         raise HTTPException(409,"approval reference required")
+    request_hash=hashlib.sha256(json.dumps({
+        "lot_id":body.lot_id,"gross_value":str(body.gross_value),"currency":body.currency,
+        "allocations":{k:str(v) for k,v in sorted(body.allocations.items())},
+        "approval_reference":body.approval_reference
+    },sort_keys=True).encode()).hexdigest()
+    idem=reserve_idempotency(body.idempotency_key,"settlement.execute",request_hash)
+    if idem["replay"] and idem["resource_id"]:
+        return {"instruction_id":idem["resource_id"],"status":"idempotent_replay","rail":"AgPay"}
     instruction_id=f"set_{uuid4().hex[:12]}"
-    result={"instruction_id":instruction_id,"lot_id":body.lot_id,"gross_value":body.gross_value,"currency":body.currency,
-      "allocations":body.allocations,"approved_by":body.approved_by,"approval_reference":body.approval_reference,
-      "idempotency_key":body.idempotency_key,"status":"submitted_to_agros","rail":"AgPay"}
+    entries=[{"account_id":f"settlement:clearing:{body.currency}","debit":body.gross_value,"account_type":"clearing"}]
+    entries += [{"account_id":f"beneficiary:{name}:{body.currency}","credit":amount,"account_type":"payable"} for name,amount in body.allocations.items()]
+    ledger_tx=post_balanced_transaction(instruction_id,body.currency,entries,metadata={
+        "lot_id":body.lot_id,"approval_reference":body.approval_reference,"principal_sub":principal.subject
+    })
+    with db_session() as s:
+        s.add(ApprovalRecord(
+            id=f"apr_{uuid4().hex[:16]}",run_id=instruction_id,action="settlement.execute",
+            principal_sub=principal.subject,tenant_id=principal.tenant_id,institution_id=principal.institution_id,
+            policy_source=decision.get("source","unknown"),policy_decision=decision,token_jti=principal.token_id
+        ))
+    complete_idempotency(body.idempotency_key,instruction_id)
+    result={"instruction_id":instruction_id,"lot_id":body.lot_id,"gross_value":str(body.gross_value),"currency":body.currency,
+      "allocations":{k:str(v) for k,v in body.allocations.items()},"approved_by":principal.subject,
+      "approval_reference":body.approval_reference,"idempotency_key":body.idempotency_key,
+      "status":"submitted_to_agros","rail":"AgPay","ledger_transaction_id":ledger_tx["transaction_id"]}
     trace(instruction_id,"settlement.execute",exposure=body.gross_value,currency=body.currency,
-      provenance={"approval_reference":body.approval_reference,"bridge":"agpay-v1"})
+      provenance={"approval_reference":body.approval_reference,"bridge":"agpay-v2","principal_sub":principal.subject})
     return result
 
 @router.post("/policies")
