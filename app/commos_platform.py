@@ -230,8 +230,8 @@ def buyer_quote(body:BuyerQuoteRequest):
     if not lot:raise HTTPException(404,"commodity lot not found")
     compatible=lot["commodity"].lower() in buyer["commodities"]
     if not compatible:raise HTTPException(422,"buyer does not support commodity")
-    spread={"exporter_demo":0.015,"processor_demo":-0.02,"roaster_demo":0.04}.get(body.buyer_connector,0)
-    price=round(body.reference_price*(1+spread),4)
+     spread={"exporter_demo":Decimal("0.015"),"processor_demo":Decimal("-0.02"),"roaster_demo":Decimal("0.04")}.get(body.buyer_connector,Decimal("0"))
+    price=(body.reference_price*(Decimal("1")+spread)).quantize(Decimal("0.0001"))
     return {"buyer_connector":body.buyer_connector,"lot_id":body.lot_id,"unit_price":price,"currency":body.currency,
         "quantity":lot["quantity"],"gross_value":round(price*lot["quantity"],2),"status":"indicative","connector_mode":"sandbox"}
 
@@ -262,10 +262,10 @@ def forward_create(body:ForwardCreate):
 
 @router.post("/hedge/calculate")
 def hedge_calculate(body:HedgeRequest):
-    ratio=min(body.forward_quantity/body.exposure_quantity,1)
+    ratio=min(body.forward_quantity/body.exposure_quantity,Decimal("1"))
     spot_value=body.exposure_quantity*body.spot_reference
     forward_value=body.forward_quantity*body.forward_price
-    return {"hedge_ratio":round(ratio,4),"unhedged_quantity":max(body.exposure_quantity-body.forward_quantity,0),
+    return {"hedge_ratio":round(ratio,4),"unhedged_quantity":max(body.exposure_quantity-body.forward_quantity,Decimal("0")),
       "spot_reference_value":round(spot_value,2),"forward_notional":round(forward_value,2),
       "interpretation":"fully_hedged" if ratio>=1 else "partially_hedged" if ratio>0 else "unhedged"}
 
@@ -476,7 +476,7 @@ def buyer_live_quote(body:BuyerQuoteRequest):
     headers={"Authorization":f"Bearer {token}"} if token else {}
     try:
         r=httpx.post(base.rstrip("/")+"/quote",json={
-            "lot":lot,"reference_price":body.reference_price,"currency":body.currency
+            "lot":json.loads(json.dumps(lot,default=str)),"reference_price":str(body.reference_price),"currency":body.currency
         },headers=headers,timeout=8)
         r.raise_for_status()
         out=r.json()
