@@ -1,8 +1,20 @@
 from datetime import datetime, timezone
 from uuid import uuid4
+from decimal import Decimal
 from sqlalchemy import select
 from app.db import db_session
 from app.commos_models import CommodityLot, MarketObservation
+
+def json_safe(value):
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: json_safe(v) for k,v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(v) for v in value]
+    return value
 
 def lot_to_dict(x: CommodityLot):
     return {"lot_id":x.id,"commodity":x.commodity,"origin_country":x.origin_country,"quantity":x.quantity,
@@ -65,8 +77,8 @@ def run_to_dict(x: AgentRun):
 
 def create_run(data: dict):
     with db_session() as s:
-        row=AgentRun(id=data["run_id"],intent=data["intent"],lot_snapshot=data["lot_snapshot"],plan=data["plan"],
-          status=data["status"],approval=data["approval"])
+        row=AgentRun(id=data["run_id"],intent=json_safe(data["intent"]),lot_snapshot=json_safe(data["lot_snapshot"]),plan=json_safe(data["plan"]),
+          status=data["status"],approval=json_safe(data["approval"]))
         s.add(row);s.flush();return run_to_dict(row)
 
 def get_run(run_id: str):
@@ -79,7 +91,7 @@ def update_run(run_id: str, **changes):
         row=s.get(AgentRun,run_id)
         if not row:return None
         for k,v in changes.items():
-            if hasattr(row,k):setattr(row,k,v)
+            if hasattr(row,k):setattr(row,k,json_safe(v) if k in ("intent","lot_snapshot","plan","approval") else v)
         s.flush();return run_to_dict(row)
 
 def proposal_to_dict(x: TradeProposal):
