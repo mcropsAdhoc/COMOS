@@ -11,7 +11,7 @@ from app.commos_platform import router as commos_platform_router
 from app.market_integrity import router as market_integrity_router
 from app.compliance_governance import router as compliance_governance_router
 from app.workflow_api import router as workflow_router
-from app.security import Principal, current_principal, principal_from_authorization, set_current_principal, reset_current_principal
+from app.security import Principal, current_principal, principal_from_authorization, set_current_principal, reset_current_principal, authorize_http_request
 
 app = FastAPI(title="DCF AgrOS Agent-Native Infrastructure", version="0.3.0")
 cors_origins = [x.strip() for x in os.getenv("COMMOS_CORS_ORIGINS", "*").split(",") if x.strip()]
@@ -40,6 +40,7 @@ async def commos_auth_guard(request, call_next):
                     institution_id=os.getenv("COMMOS_DEV_INSTITUTION","dcf"),
                     roles=("dcf_admin","bank_approver"),scopes=("*",),token_id="dev-token",auth_method="dev-bypass"
                 )
+            authorize_http_request(principal,request.method,request.url.path)
             request.state.principal=principal
             ctx=set_current_principal(principal)
         except HTTPException as exc:
