@@ -230,10 +230,10 @@ def buyer_quote(body:BuyerQuoteRequest):
     if not lot:raise HTTPException(404,"commodity lot not found")
     compatible=lot["commodity"].lower() in buyer["commodities"]
     if not compatible:raise HTTPException(422,"buyer does not support commodity")
-     spread={"exporter_demo":Decimal("0.015"),"processor_demo":Decimal("-0.02"),"roaster_demo":Decimal("0.04")}.get(body.buyer_connector,Decimal("0"))
+    spread={"exporter_demo":Decimal("0.015"),"processor_demo":Decimal("-0.02"),"roaster_demo":Decimal("0.04")}.get(body.buyer_connector,Decimal("0"))
     price=(body.reference_price*(Decimal("1")+spread)).quantize(Decimal("0.0001"))
     return {"buyer_connector":body.buyer_connector,"lot_id":body.lot_id,"unit_price":price,"currency":body.currency,
-        "quantity":lot["quantity"],"gross_value":round(price*lot["quantity"],2),"status":"indicative","connector_mode":"sandbox"}
+        "quantity":lot["quantity"],"gross_value":(price*Decimal(str(lot["quantity"]))).quantize(Decimal("0.01")),"status":"indicative","connector_mode":"sandbox"}
 
 @router.post("/market/observations")
 def market_observe(body:ObservationCreate):
