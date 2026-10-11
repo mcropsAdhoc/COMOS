@@ -74,3 +74,42 @@ def current_principal(required:bool=True)->Principal|None:
     p=_current.get()
     if required and p is None:raise HTTPException(401,"authenticated principal required")
     return p
+
+
+ROLE_RULES=[
+    ("POST","/v1/agent/sessions/","approval:write",{"dcf_admin","bank_approver","pilot_approver"}),
+    ("POST","/v1/skills/payment.disburse","settlement:execute",{"dcf_admin","bank_approver","pilot_approver"}),
+    ("POST","/v1/commos/policies","policy:admin",{"dcf_admin"}),
+    ("POST","/v1/commos/market-integrity/title-transfer","ownership:transfer",{"dcf_admin","pilot_approver"}),
+    ("POST","/v1/commos/workflows/","workflow:execute",{"dcf_admin","pilot_approver","bank_approver"}),
+]
+SCOPE_RULES=[
+    ("POST","/v1/identities","identity:write"),
+    ("POST","/v1/graph/","graph:write"),
+    ("POST","/v1/skills/credit.prequalify","credit:assess"),
+    ("POST","/v1/commos/lots","commodity:write"),
+    ("POST","/v1/commos/orderbook/","order:write"),
+    ("POST","/v1/commos/warehouse/","warehouse:write"),
+    ("POST","/v1/commos/market/","market:write"),
+    ("POST","/v1/commos/governance/","compliance:write"),
+    ("POST","/v1/commos/market-integrity/","trade:execute"),
+    ("POST","/v1/commos/workflows/","workflow:execute"),
+]
+
+def authorize_http_request(principal:Principal,method:str,path:str):
+    if "*" in principal.scopes:
+        scope_ok=lambda _: True
+    else:
+        scope_ok=lambda required: required in principal.scopes
+    for rule_method,prefix,scope,roles in ROLE_RULES:
+        if method==rule_method and path.startswith(prefix):
+            if not scope_ok(scope):
+                raise HTTPException(403,f"scope {scope} required")
+            if not set(principal.roles)&roles:
+                raise HTTPException(403,"role not authorized for operation")
+            return
+    for rule_method,prefix,scope in SCOPE_RULES:
+        if method==rule_method and path.startswith(prefix):
+            if not scope_ok(scope):
+                raise HTTPException(403,f"scope {scope} required")
+            return
