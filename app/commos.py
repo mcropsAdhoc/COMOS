@@ -153,7 +153,7 @@ def market_quote(body: MarketQuoteRequest):
     lot = persisted_lot(body.lot_id) or commodity_lots.get(body.lot_id)
     if not lot:
         raise HTTPException(404, "commodity lot not found")
-    gross_value = round(lot["quantity"] * body.reference_price, 2)
+    gross_value = (Decimal(str(lot["quantity"])) * body.reference_price).quantize(Decimal("0.01"))
     result = {
         "lot_id":body.lot_id,
         "commodity":lot["commodity"],
@@ -170,10 +170,10 @@ def market_quote(body: MarketQuoteRequest):
 
 @router.post("/skills/finance.assess")
 def finance_assess(body: FinanceAssessRequest):
-    lot = commodity_lots.get(body.lot_id)
+    lot = persisted_lot(body.lot_id) or commodity_lots.get(body.lot_id)
     if not lot:
         raise HTTPException(404, "commodity lot not found")
-    reference_value = round(lot["quantity"] * body.reference_unit_price, 2)
+    reference_value = (Decimal(str(lot["quantity"])) * body.reference_unit_price).quantize(Decimal("0.01"))
     max_facility = (reference_value * body.advance_rate).quantize(Decimal("0.01"))
     result = {
         "lot_id": body.lot_id,
@@ -189,10 +189,10 @@ def finance_assess(body: FinanceAssessRequest):
 
 @router.post("/skills/risk.assess")
 def risk_assess(body: RiskAssessRequest):
-    lot = commodity_lots.get(body.lot_id)
+    lot = persisted_lot(body.lot_id) or commodity_lots.get(body.lot_id)
     if not lot:
         raise HTTPException(404, "commodity lot not found")
-    reference_value = round(lot["quantity"] * body.reference_unit_price, 2)
+    reference_value = (Decimal(str(lot["quantity"])) * body.reference_unit_price).quantize(Decimal("0.01"))
     stressed_value = (reference_value * (Decimal("1") - body.downside_percent / Decimal("100"))).quantize(Decimal("0.01"))
     flags = []
     if not lot.get("warehouse_id"):
@@ -201,7 +201,7 @@ def risk_assess(body: RiskAssessRequest):
         flags.append("no_farm_lineage")
     if lot.get("attributes", {}).get("traceability") not in ("verified", "ready"):
         flags.append("traceability_unverified")
-    rating = "low" if not flags and body.downside_percent <= 15 else "medium" if len(flags) <= 1 else "high"
+    rating = "low" if not flags and body.downside_percent <= Decimal("15") else "medium" if len(flags) <= 1 else "high"
     result = {
         "lot_id": body.lot_id,
         "reference_value": reference_value,
@@ -216,7 +216,7 @@ def risk_assess(body: RiskAssessRequest):
 
 @router.post("/skills/compliance.check")
 def compliance_check(body: ComplianceCheckRequest):
-    lot = commodity_lots.get(body.lot_id)
+    lot = persisted_lot(body.lot_id) or commodity_lots.get(body.lot_id)
     if not lot:
         raise HTTPException(404, "commodity lot not found")
     checks = {
@@ -231,7 +231,7 @@ def compliance_check(body: ComplianceCheckRequest):
 
 @router.post("/settlements/preview")
 def settlement_preview(body: SettlementPreviewRequest):
-    lot = commodity_lots.get(body.lot_id)
+    lot = persisted_lot(body.lot_id) or commodity_lots.get(body.lot_id)
     if not lot:
         raise HTTPException(404, "commodity lot not found")
     fixed = body.lender_percent + body.insurance_percent + body.cooperative_percent + body.platform_percent
@@ -259,7 +259,7 @@ def settlement_preview(body: SettlementPreviewRequest):
 
 @router.post("/runs")
 def create_run(body: HarnessIntent):
-    lot = commodity_lots.get(body.lot_id)
+    lot = persisted_lot(body.lot_id) or commodity_lots.get(body.lot_id)
     if not lot:
         raise HTTPException(404, "commodity lot not found")
     skills = _plan_for(body.intent)
