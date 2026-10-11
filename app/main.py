@@ -10,6 +10,7 @@ from app.commos import router as commos_router
 from app.commos_platform import router as commos_platform_router
 from app.market_integrity import router as market_integrity_router
 from app.compliance_governance import router as compliance_governance_router
+from app.workflow_api import router as workflow_router
 from app.security import Principal, current_principal, principal_from_authorization, set_current_principal, reset_current_principal
 
 app = FastAPI(title="DCF AgrOS Agent-Native Infrastructure", version="0.3.0")
@@ -52,6 +53,7 @@ app.include_router(commos_router)
 app.include_router(commos_platform_router)
 app.include_router(market_integrity_router)
 app.include_router(compliance_governance_router)
+app.include_router(workflow_router)
 
 identities = {}
 edges = []
