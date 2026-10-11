@@ -8,6 +8,7 @@ from sqlalchemy import select, func
 from app.db import db_session
 from app.security import current_principal
 from app.commos_models import CommodityLot, Order, LotReservation, TradeConfirmation, CounterpartyExposure, OwnershipEvent
+from app.pilot_controls import enforce_supervised_action
 
 router=APIRouter(prefix="/v1/commos/market-integrity",tags=["COMMOS Market Integrity"])
 
@@ -57,6 +58,7 @@ def fill_order(order_id:str,body:FillRequest):
         remaining=order.remaining_quantity if order.remaining_quantity is not None else order.quantity
         if body.quantity>remaining:raise HTTPException(409,"fill exceeds remaining quantity")
         gross=body.quantity*body.unit_price
+        enforce_supervised_action("trade.fill",gross,body.currency)
         exposure=s.get(CounterpartyExposure,f"{body.buyer_id}:{body.currency}")
         require_limits=os.getenv("COMMOS_REQUIRE_COUNTERPARTY_LIMITS","true").lower()=="true"
         if require_limits and not exposure:raise HTTPException(403,"counterparty limit not configured")
@@ -80,6 +82,7 @@ def fill_order(order_id:str,body:FillRequest):
 @router.post("/title-transfer")
 def title_transfer(body:TitleTransferRequest):
     p=current_principal()
+    enforce_supervised_action("ownership.transfer")
     with db_session() as s:
         lot=s.execute(select(CommodityLot).where(CommodityLot.id==body.lot_id).with_for_update()).scalar_one_or_none()
         if not lot:raise HTTPException(404,"lot not found")
