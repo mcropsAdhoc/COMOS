@@ -15,6 +15,7 @@ from app.live_connectors import infrastructure_health
 from app.security import current_principal
 from app.financials import reserve_idempotency, complete_idempotency, post_balanced_transaction
 from app.agent_control import authorize_capability
+from app.pilot_controls import enforce_supervised_action
 
 router = APIRouter(prefix="/v1/commos", tags=["COMMOS Platform"])
 CRITICAL_ACTIONS={"trade.execute","settlement.execute","warehouse.lien.create","forward.activate","ownership.transfer","loan.originate"}
@@ -315,6 +316,7 @@ def policy_evaluate(body:PolicyEvaluate):
 @router.post("/agpay/settlements")
 def agpay_settle(body:SettlementRequest):
     principal=current_principal()
+    enforce_supervised_action("settlement.execute",body.gross_value,body.currency)
     total=sum(body.allocations.values(),Decimal("0"))
     if total.quantize(Decimal("0.00000001"))!=body.gross_value.quantize(Decimal("0.00000001")):
         raise HTTPException(422,"allocations must equal gross value")
