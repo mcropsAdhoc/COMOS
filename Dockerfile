@@ -16,10 +16,6 @@ COPY migrations migrations
 COPY alembic.ini .
 COPY policies policies
 
-RUN useradd --create-home --uid 10001 commos \
-    && chown -R commos:commos /app
-USER commos
-
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
