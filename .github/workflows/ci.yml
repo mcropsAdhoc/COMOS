@@ -6,6 +6,10 @@ on:
   push:
     branches: [hardening/industrial-v1]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   security-events: write
