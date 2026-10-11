@@ -83,7 +83,7 @@ class AgentPlan(BaseModel):
 
 class PaymentRequest(BaseModel):
     payee_id: str
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0)
     currency: str = "UGX"
 
 def emit(kind, entity, payload=None):
@@ -130,9 +130,9 @@ def credit_prequalify(body: CreditRequest):
     if body.farmer_id not in identities:
         raise HTTPException(404, "farmer not found")
     ltv = body.requested_amount / body.estimated_harvest_value
-    score = max(300, min(850, round(760 - 220 * ltv)))
-    eligible = ltv <= 0.6 and score >= 600
-    result = {"farmer_id": body.farmer_id, "score": score, "eligible": eligible, "ltv": round(ltv, 4), "max_facility": round(body.estimated_harvest_value * 0.6, 2)}
+    score = max(300, min(850, round(Decimal("760") - Decimal("220") * ltv)))
+    eligible = ltv <= Decimal("0.6") and score >= 600
+    result = {"farmer_id": body.farmer_id, "score": score, "eligible": eligible, "ltv": round(ltv, 4), "max_facility": round(body.estimated_harvest_value * Decimal("0.6"), 2)}
     emit("credit.prequalified", body.farmer_id, result)
     return result
 
