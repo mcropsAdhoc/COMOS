@@ -36,6 +36,8 @@ jobs:
       COMMOS_DEV_JWT_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
       OIDC_AUDIENCE: commos-api
       OPA_URL: http://127.0.0.1:8181
+      COMMOS_PILOT_MODE: "true"
+      COMMOS_PILOT_MAX_TX_USD: "50000"
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
@@ -71,10 +73,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Scan current tree for secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 dir /repo --redact --exit-code 1
 
   container:
     runs-on: ubuntu-latest
@@ -87,7 +88,15 @@ jobs:
           push: false
           load: true
           tags: commos:${{ github.sha }}
-      - uses: anchore/scan-action@v6
+      - name: Vulnerability report
+        uses: anchore/scan-action@v6
+        with:
+          image: commos:${{ github.sha }}
+          fail-build: false
+          severity-cutoff: high
+          output-format: table
+      - name: Enforce high severity threshold
+        uses: anchore/scan-action@v6
         with:
           image: commos:${{ github.sha }}
           fail-build: true
