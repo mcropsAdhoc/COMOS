@@ -2,7 +2,7 @@ import os, jwt
 from fastapi.testclient import TestClient
 from app.main import app
 
-SECRET="0123456789abcdef0123456789abcdef0123456789abcdef"
+SECRET="test-only-not-a-secret-"*3
 def token():
     return jwt.encode({"sub":"user-1","tenant_id":"tenant-1","institution_id":"dcf","roles":["dcf_admin"],"scope":"*","aud":"commos-api"},SECRET,algorithm="HS256")
 
