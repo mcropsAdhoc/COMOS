@@ -1,0 +1,116 @@
+name: COMMOS Industrial CI
+
+on:
+  workflow_call:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [hardening/industrial-v1]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: commos
+          POSTGRES_PASSWORD: commos
+          POSTGRES_DB: commos_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U commos -d commos_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://commos:commos@localhost:5432/commos_test
+      COMMOS_AUTH_MODE: dev
+      COMMOS_AUTH_REQUIRED: "false"
+      COMMOS_DEV_JWT_SECRET: test-only-not-a-secret-test-only-not-a-secret
+      OIDC_AUDIENCE: commos-api
+      OPA_URL: http://127.0.0.1:8181
+      COMMOS_PILOT_MODE: "true"
+      COMMOS_PILOT_MAX_TX_USD: "50000"
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt
+      - uses: open-policy-agent/setup-opa@v2
+      - name: Start OPA test server
+        run: |
+          opa run --server --addr=127.0.0.1:8181 policies/commos.rego >/tmp/opa.log 2>&1 &
+          for i in {1..20}; do
+            curl -sf http://127.0.0.1:8181/health && exit 0
+            sleep 0.5
+          done
+          cat /tmp/opa.log
+          exit 1
+      - run: alembic upgrade head
+      - run: pytest -q
+      - run: alembic check
+      - run: |
+          pip install pip-audit
+          pip-audit
+
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with: {languages: python}
+      - uses: github/codeql-action/analyze@v3
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan current tree for secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 dir /repo --redact --exit-code 1
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: commos:${{ github.sha }}
+      - name: Vulnerability report
+        uses: anchore/scan-action@v6
+        with:
+          image: commos:${{ github.sha }}
+          fail-build: false
+          severity-cutoff: high
+          output-format: table
+      - name: Enforce actionable high severity threshold
+        uses: anchore/scan-action@v6
+        with:
+          image: commos:${{ github.sha }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+      - uses: anchore/sbom-action@v0
+        with:
+          image: commos:${{ github.sha }}
+          artifact-name: commos-sbom.spdx.json
+
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-policy-agent/setup-opa@v2
+      - run: opa test policies -v

@@ -1,0 +1,17 @@
+name: COMMOS Synthetic Monitor
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Production health
+        run: |
+          curl --fail --show-error --silent --max-time 10 https://commos-api-production.up.railway.app/health
+      - name: UI health
+        run: |
+          curl --fail --show-error --silent --max-time 10 https://commos-ui-production.up.railway.app/
