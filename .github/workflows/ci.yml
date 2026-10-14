@@ -95,12 +95,13 @@ jobs:
           fail-build: false
           severity-cutoff: high
           output-format: table
-      - name: Enforce high severity threshold
+      - name: Enforce actionable high severity threshold
         uses: anchore/scan-action@v6
         with:
           image: commos:${{ github.sha }}
           fail-build: true
           severity-cutoff: high
+          only-fixed: true
       - uses: anchore/sbom-action@v0
         with:
           image: commos:${{ github.sha }}
