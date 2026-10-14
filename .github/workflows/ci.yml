@@ -33,7 +33,7 @@ jobs:
       DATABASE_URL: postgresql+psycopg://commos:commos@localhost:5432/commos_test
       COMMOS_AUTH_MODE: dev
       COMMOS_AUTH_REQUIRED: "false"
-      COMMOS_DEV_JWT_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
+      COMMOS_DEV_JWT_SECRET: test-only-not-a-secret-test-only-not-a-secret
       OIDC_AUDIENCE: commos-api
       OPA_URL: http://127.0.0.1:8181
       COMMOS_PILOT_MODE: "true"
